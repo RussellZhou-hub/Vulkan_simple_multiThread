@@ -15,14 +15,17 @@ public:
 	~Engine();
 
 	void render(Scene* scene);
-	void renderThreadFunc(Scene* scene);
+	void renderThreadFunc(Scene* scene,int frameIndex);
 	int get_maxFramesInFlight();
 	int getLastTime();
 	void setLatTime(int currentTime);
 	int getCurrentFrame();
 
 	bool shouldClose;
-	int frameNumberTotal;
+	std::atomic<int> frameNumberTotal;
+
+	static const int kBufferSize=10;
+	std::atomic<bool> frameIndexAvailable[kBufferSize];
 
 private:
 

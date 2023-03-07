@@ -211,7 +211,7 @@ namespace vkInit {
       VULKAN_HPP_NAMESPACE::SwapchainKHR   oldSwapchain_ = {} ) VULKAN_HPP_NOEXCEPT
 		*/
 		vk::SwapchainCreateInfoKHR createInfo = vk::SwapchainCreateInfoKHR(
-			vk::SwapchainCreateFlagsKHR(), surface, imageCount-1, format.format, format.colorSpace,
+			vk::SwapchainCreateFlagsKHR(), surface, imageCount, format.format, format.colorSpace,
 			extent, 1, vk::ImageUsageFlagBits::eColorAttachment
 		);
 

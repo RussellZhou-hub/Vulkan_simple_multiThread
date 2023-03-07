@@ -80,29 +80,42 @@ void App::mainLoop(){
 
         graphicsEngine->render(scene);
 
-		calculateFrameRate();
+		//calculateFrameRate();
+        calculateFrameRate_multi();
 	}
 }
 
 void App::mainLoop_multi(){
 
-    int numTreads = graphicsEngine->get_maxFramesInFlight();
+    
+    int numTreads = graphicsEngine->get_maxFramesInFlight()/2;
     std::vector<std::thread> threads;
 
     Engine& obj = (*graphicsEngine);
-        for(auto i=0;i<numTreads;++i){ 
-            threads.emplace_back(std::thread([&obj,this,i](){ obj.renderThreadFunc(scene); }));
-        }
+    for(auto i=0;i<numTreads;++i){ 
+        threads.emplace_back(std::thread([&obj,this,i](){ obj.renderThreadFunc(scene,i); }));
+    }
+    for(auto& t: threads){ 
+        t.join();
+    }
+    
+    // wait rendering threads to finished
+    //for(auto& thread:threads){
+    //    thread.detach();
+    //}
 
-    lastFrameIndex=graphicsEngine->getCurrentFrame();
+    lastFrameAccumulate=graphicsEngine->frameNumberTotal.load();
+    
     lastTime = glfwGetTime();
 
 	while (!glfwWindowShouldClose(window)) {
 
-        if(lastFrameIndex==graphicsEngine->getCurrentFrame()){ // if not rendered new frame, skip
+        
+        if(lastFrameAccumulate!=0 && lastFrameAccumulate==graphicsEngine->frameNumberTotal.load()){ // if not rendered new frame, skip
             continue;
         }
-        lastFrameIndex=graphicsEngine->getCurrentFrame();
+        lastFrameAccumulate=graphicsEngine->frameNumberTotal.load(); // only used in main thread to see if rendered new image
+        
 
 		glfwPollEvents();
 		
@@ -146,7 +159,7 @@ void App::mainLoop_multi(){
 		//drawFrame();
         graphicsEngine->shouldClose = glfwWindowShouldClose(window);
 
-        graphicsEngine->render(scene);
+        //graphicsEngine->render(scene);
 
 		//calculateFrameRate();
         calculateFrameRate_multi();
@@ -155,6 +168,7 @@ void App::mainLoop_multi(){
 
 void App::run() {
 	mainLoop();
+    //mainLoop_multi();
 }
 
 int App::getDeltaTime(Engine* graphicsEngine,int currentTime){
@@ -182,7 +196,7 @@ void App::calculateFrameRate_multi() {
 	currentTime = glfwGetTime();
 	double delta = currentTime - lastTime;
     int currenFrame=graphicsEngine->getCurrentFrame();
-    numFrames = graphicsEngine->frameNumberTotal;
+    numFrames = graphicsEngine->frameNumberTotal.load();
 
 	if (delta >= 1) {
 		int framerate{ std::max(1, int(numFrames / delta)) };
@@ -193,8 +207,8 @@ void App::calculateFrameRate_multi() {
 		numFrames = -1;
 		frameTime = float(1000.0 / framerate);
 
-        lastFrameIndex=currenFrame;
-        graphicsEngine->frameNumberTotal=0;
+        lastFrameAccumulate=currenFrame;
+        graphicsEngine->frameNumberTotal.store(0);
 	}
 }
 

@@ -18,6 +18,10 @@ Engine::Engine(int width, int height, GLFWwindow* window, bool debug) {
 	debugMode = debug;
 
 	frameNumber_atomic.store(0);
+
+	for (auto& idxAvailable: frameIndexAvailable){
+		idxAvailable.store(true);
+	}
 	
 	if (debugMode) {
 		std::cout << "Making a graphics engine\n";
@@ -65,7 +69,7 @@ void Engine::make_device()
 	presentQueue = queues[1];
 	make_swapchain();
 	frameNumber=0;
-	frameNumberTotal=0;
+	frameNumberTotal.store(0);
 }
 
 void Engine::make_swapchain(){
@@ -421,6 +425,7 @@ int Engine::get_maxFramesInFlight(){
 
 void Engine::render(Scene* scene){
 	int frameIndex=frameNumber_atomic.load();
+	int frameAccumulate=frameNumberTotal.load();
 
 	device.waitForFences(1, &swapchainFrames[frameIndex].inFlight, VK_TRUE, UINT64_MAX);
 	
@@ -504,25 +509,35 @@ void Engine::render(Scene* scene){
 
 	frameNumber=(frameNumber+1) % maxFramesInFlight;
 	frameNumber_atomic.store((frameIndex+1)% maxFramesInFlight);
-	frameNumberTotal=frameNumberTotal+1;
+	frameNumberTotal.store(frameAccumulate+1);
+
+	//device.waitIdle();
 }
 
-void Engine::renderThreadFunc(Scene* scene){
+void Engine::renderThreadFunc(Scene* scene,int frameIndex){
 
 	while(!shouldClose){
-		int frameIndex=frameNumber_atomic.load();
+
+		int frameAccumulate=frameNumberTotal.load();
+
+	
+		bool expected=true;
+		bool desired=false;
+		while(!frameIndexAvailable[frameIndex].compare_exchange_strong(expected,desired)){   // see if other thread is using this index
+			frameIndex=(frameIndex+1)%maxFramesInFlight;
+		}
+
+		//int frameIndex=frameNumber_atomic.load();
 		device.waitForFences(1, &swapchainFrames[frameIndex].inFlight, VK_TRUE, UINT64_MAX);
+
+		/*
+		//now we can use this fence resource , but we need to see if other thread is using this
 		while(!frameNumber_atomic.compare_exchange_weak(frameIndex,frameIndex)){ // if frameIndex not changed then we continue
 			device.resetFences(1, &swapchainFrames[frameIndex].inFlight);   //make this resource outher thread available
 			frameIndex = frameNumber_atomic.load(); //reload
 			device.waitForFences(1, &swapchainFrames[frameIndex].inFlight, VK_TRUE, UINT64_MAX);
 		};
-		
-
-		
-		//now we can use this fence resource , but we need to see if other thread is using this
-
-	
+	*/
 	
 		//acquireNextImageKHR(vk::SwapChainKHR, timeout, semaphore_to_signal, fence)
 		uint32_t imageIndex;
@@ -566,16 +581,23 @@ void Engine::renderThreadFunc(Scene* scene){
 		submitInfo.signalSemaphoreCount = 1;
 		submitInfo.pSignalSemaphores = signalSemaphores;
 
-	device.resetFences(1, &swapchainFrames[frameIndex].inFlight);
-	try {
-		graphicsQueue.submit(submitInfo, swapchainFrames[frameIndex].inFlight); 
-	}
-	catch (vk::SystemError err) {
-		
-		if (debugMode) {
-			std::cout << "failed to submit draw command buffer!" << std::endl;
+		device.resetFences(1, &swapchainFrames[frameIndex].inFlight);
+
+		try {
+			graphicsQueue.submit(submitInfo, swapchainFrames[frameIndex].inFlight); 
 		}
-	}
+		catch (vk::SystemError err) {
+		
+			if (debugMode) {
+				std::cout << "failed to submit draw command buffer!" << std::endl;
+			}
+		}
+
+		expected=false;
+		desired=true;
+		if(!frameIndexAvailable[frameIndex].compare_exchange_strong(expected,desired)){   // make this resource available for other thread
+			std::cout<<"there is an error: frameIndex"<<frameIndex<<" is be changed unexpected\n";
+		}
 
 		vk::PresentInfoKHR presentInfo = {};
 		presentInfo.waitSemaphoreCount = 1;
@@ -603,6 +625,7 @@ void Engine::renderThreadFunc(Scene* scene){
 
 		//frameIndex=(frameIndex+1) % maxFramesInFlight;
 		frameNumber_atomic.store((frameIndex+1) % maxFramesInFlight);
+		frameNumberTotal.store(frameAccumulate+1);
 		}
 }
 

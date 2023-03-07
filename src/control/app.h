@@ -10,8 +10,9 @@ class App {
 public:
 	double lastTime, currentTime;
 	int numFrames;
-	int lastFrameIndex;
+	int lastFrameAccumulate;
 	float frameTime;
+
 private:
 	Engine* graphicsEngine;
 	GLFWwindow* window;
